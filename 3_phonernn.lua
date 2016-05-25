@@ -30,7 +30,7 @@ local vocab_size = 10 + 1   -- for this problem, 0-9 plus ' '(blank)
 local model = nn.Sequential()
 model:add(nn.SplitTable(1))
 
-local hiddensize = {27, 1000}
+local hiddensize = {27, 128}
 local inputsize = hiddensize[1]
 
 for i = 2, #hiddensize do
@@ -88,35 +88,50 @@ end
 -- training
 function train(learningRate)
     local total_loss = 0
-    --local batchsize = 50
     local shuffle = torch.randperm(trainset.size)
-    for i = 1, trainset.size do
-        xlua.progress(i, trainset.size)
-        local input = trainset.inputs[shuffle[i]]:t()
-        local targetstr = trainset.targets[shuffle[i]]
-        local target = {}
-        for j = 1, targetstr:size(1) do
-            target[#target + 1] = targetstr[j]
+    local batchsize = 50
+    for t = 1, trainset.size, batchsize do
+        --xlua.progress(t, trainset.size)
+        local actualsize = math.min(batchsize + t - 1, trainset.size) - t + 1
+        local inputs = torch.Tensor(actualsize, 58, 27):fill(0)
+        if opt.gpuid >= 0 then
+            inputs = inputs:cuda()
         end
-        local output = model:forward(input)
-        local size = {58}
-        local grads = torch.Tensor(58, vocab_size)
+        local targets = {}
+        local sizes = {}
+        for i = t, t+actualsize-1 do
+            inputs[i - t + 1] = trainset.inputs[shuffle[i]]:t()
+            local targetstr = trainset.targets[shuffle[i]]
+            local target = {}
+            for j = 1, targetstr:size(1) do
+                table.insert(target, targetstr[j])
+            end
+            table.insert(targets, target)
+            table.insert(sizes, 58)
+        end
+        --print(inputs:size())
+        local outputs = model:forward(inputs)
+        --print(outputs:size())
+        local grads = outputs:clone()
         local loss = 0
         if opt.gpuid >= 0 then
-            output = output:cuda()
+            outputs = outputs:cuda()
             grads = grads:cuda()
-            loss = gpu_ctc(output, grads, {target}, size)[1]
+            loss = gpu_ctc(outputs, grads, targets, sizes)[1]
         else
-            output = output:float()
+            outputs = outputs:float()
             grads = grads:float()
-            loss = cpu_ctc(output, grads, {target}, size)[1]
+            loss = cpu_ctc(outputs, grads, targets, sizes)[1]
         end
         total_loss = total_loss + loss
 
-        model:backward(input, grads)
+        --print(grads:size())
+
+        model:backward(inputs, grads)
         model:updateGradParameters(0.9)
         model:updateParameters(learningRate)
         model:zeroGradParameters()
+        break
     end
 
     return total_loss / trainset.size

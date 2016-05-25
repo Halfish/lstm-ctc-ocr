@@ -1,7 +1,7 @@
 require 'image'
 require 'io'
 
-local num = 1000
+local num = 10000
 
 local fullset = {}
 fullset.size = num
@@ -15,6 +15,7 @@ for i = 1, num do
 
     local file = io.open('./lines/' .. tostring(i) .. '.txt', 'r')
     local labelstr = file:read()
+    file:close()
     local label = torch.IntTensor(4)
     for j = 1, #labelstr do
        label[j] = tonumber(string.sub(labelstr, j, j)) + 1

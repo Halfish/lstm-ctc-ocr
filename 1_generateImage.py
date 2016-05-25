@@ -5,7 +5,7 @@ from PIL import Image
 from PIL import ImageDraw
 from PIL import ImageFont
 
-num = 1000
+num = 10000
 '''
 generate images in ./lines/
 '''
