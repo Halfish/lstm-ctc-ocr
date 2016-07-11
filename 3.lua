@@ -29,8 +29,9 @@ local vocab_size = 10 + 1   -- for this problem, 0-9 plus ' '(blank)
 
 local model = nn.Sequential()
 model:add(nn.SplitTable(1))
+nn.FastLSTM.bn = true
 
-local hiddensize = {31, 256}
+local hiddensize = {31, 300}
 local inputsize = hiddensize[1]
 
 for i = 2, #hiddensize do
@@ -41,6 +42,7 @@ for i = 2, #hiddensize do
 end
 
 model:add(nn.Sequencer(nn.Linear(hiddensize[#hiddensize], vocab_size)))
+model:add(nn.Sequencer(nn.View(1, vocab_size)))
 model:add(nn.JoinTable(1))
 
 if opt.gpuid >= 0 then
@@ -87,59 +89,33 @@ end
 -- training
 function train(learningRate)
     local total_loss = 0
+    --local batchsize = 50
     local shuffle = torch.randperm(trainset.size)
-    local batchsize = 50
-    local totalsize = math.ceil(trainset.size / batchsize)
-    local count = 1
-    for t = 1, trainset.size, batchsize do
-        xlua.progress(count, totalsize)
-        count = count + 1
-        local actualsize = math.min(batchsize + t - 1, trainset.size) - t + 1
-        local inputs = torch.Tensor(actualsize, 58, 31):fill(0)
+    for i = 1, trainset.size do
+        xlua.progress(i, trainset.size)
+        local input = trainset.inputs[shuffle[i]]:t()
+        local targetstr = trainset.targets[shuffle[i]]
+        local target = {}
+        for j = 1, targetstr:size(1) do
+            target[#target + 1] = targetstr[j]
+        end
+        local output = model:forward(input)
+        local size = {58}
+        local grads = output:clone():fill(0)
+        local loss = 0
         if opt.gpuid >= 0 then
-            inputs = inputs:cuda()
-        end
-        local targets = {}
-        local sizes = {}
-        for i = t, t+actualsize-1 do
-            inputs[i - t + 1] = trainset.inputs[shuffle[i]]:t()
-            local targetstr = trainset.targets[shuffle[i]]
-            local target = {}
-            for j = 1, targetstr:size(1) do
-                table.insert(target, targetstr[j])
-            end
-            table.insert(targets, target)
-            table.insert(sizes, 58)
-        end
-        local outputs = model:forward(inputs)
-        local acts = outputs:clone():fill(0)
-        for i = 1, actualsize do
-            for j = 1, 58 do
-                acts[i + actualsize * (j - 1)] = outputs[j + 58 * (i - 1)]
-            end
-        end
-        local grads = outputs:clone():fill(0)
-        local losses = {}
-        if opt.gpuid >= 0 then
-            acts = acts:cuda()
+            output = output:cuda()
             grads = grads:cuda()
-            losses = gpu_ctc(acts, grads, targets, sizes)
+            loss = gpu_ctc(output, grads, {target}, size)[1]
         else
-            acts = acts:float()
+            output = output:float()
             grads = grads:float()
-            losses = cpu_ctc(acts, grads, targets, sizes)
+            loss = cpu_ctc(output, grads, {target}, size)[1]
         end
-        local gradients = grads:clone():fill(0)
-        for i = 1, actualsize do
-            for j = 1, 58 do
-                gradients[j + 58 * (i - 1)] = grads[i + actualsize * (j - 1)]
-            end
-        end
-        for i = 1, #losses do
-            total_loss = total_loss + losses[i]
-        end
+        total_loss = total_loss + loss
+
         model:zeroGradParameters()
-        model:backward(inputs, gradients)
+        model:backward(input, grads)
         model:updateGradParameters(0.9)
         model:updateParameters(learningRate)
     end
@@ -151,48 +127,27 @@ end
 function eval()
     local total_loss = 0
     local shuffle = torch.randperm(validset.size)
-    local batchsize = 50
-    for t = 1, validset.size, batchsize do
-        local actualsize = math.min(batchsize + t - 1, validset.size) - t + 1
-        local inputs = torch.Tensor(actualsize, 58, 31):fill(0)
-        if opt.gpuid >= 0 then
-            inputs = inputs:cuda()
+    for i = 1, validset.size do
+        local input = validset.inputs[shuffle[i]]:t()
+        local targetstr = validset.targets[shuffle[i]]
+        local target = {}
+        for j = 1, targetstr:size(1) do
+            target[#target + 1] = targetstr[j]
         end
-        local targets = {}
-        local sizes = {}
-        for i = t, t+actualsize-1 do
-            inputs[i-t+1] = validset.inputs[shuffle[i]]:t()
-            local targetstr = validset.targets[shuffle[i]]
-            local target = {}
-            for j = 1, targetstr:size(1) do
-                table.insert(target, targetstr[j])
-            end
-            table.insert(targets, target)
-            table.insert(sizes, 58)
-        end
-        local outputs = model:forward(inputs)
-        local acts = outputs:clone():fill(0)
-        for i = 1, actualsize do
-            for j = 1, 58 do
-                acts[i + actualsize * (j - 1)] = outputs[j + 58 * (i - 1)]
-            end
-        end
-
+        local output = model:forward(input)
+        local size = {58}
         local grads = torch.Tensor() -- don't need gradients for validation here
-        local losses = {}
-
+        local loss = 0
         if opt.gpuid >= 0 then
-            acts = acts:cuda()
+            output = output:cuda()
             grads = grads:cuda()
-            losses = gpu_ctc(acts, grads, targets, sizes)
+            loss = gpu_ctc(output, grads, {target}, size)[1]
         else
-            acts = acts:float()
+            output = output:float()
             grads = grads:float()
-            losses = cpu_ctc(acts, grads, targets, sizes)
+            loss = cpu_ctc(output, grads, {target}, size)[1]
         end
-        for i = 1, #losses do
-            total_loss = total_loss + losses[i]
-        end
+        total_loss = total_loss + loss
     end
     return total_loss / validset.size
 end
@@ -205,12 +160,7 @@ do
         model:evaluate()
         local v_loss = eval()
         print(string.format('epoch = %d, loss = %.4f, v_loss = %.4f', epoch, loss, v_loss))
-        local inputs = torch.Tensor(1, 58, 31)
-        if opt.gpuid >= 0 then
-            inputs = inputs:cuda()
-        end
-        inputs[1] = trainset.inputs[1]:t()
-        local output = model:forward(inputs)
+        local output = model:forward(trainset.inputs[1]:t())
         print('predction = ', maxdecoder(output))
     end
 end

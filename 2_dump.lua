@@ -6,7 +6,7 @@ local num = 10000
 local fullset = {}
 fullset.size = num
 --local data = torch.Tensor(fullset.size, 3, 27, 142)
-local inputs = torch.Tensor(fullset.size, 27, 58)
+local inputs = torch.Tensor(fullset.size, 31, 58)
 local targets = torch.Tensor(fullset.size, 4)
 
 for i = 1, num do

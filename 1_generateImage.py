@@ -23,7 +23,7 @@ def genline(text, font, filename):
 
 if __name__ == '__main__':
     for i in range(num):
-        fontname = './fonts/simfang.ttf'
+        fontname = './fonts/simkai.ttf'
         fontsize = 24
         font = ImageFont.truetype(fontname, fontsize)
         #text = str(random.randint(1000000000, 9999999999))
