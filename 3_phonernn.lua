@@ -29,11 +29,13 @@ print(string.format('train size = %d, valid size = %d', trainset.size, validset.
 
 -- building model
 local vocab_size = 10 + 1   -- for this problem, 0-9 plus ' '(blank)
+local height, width, strlen = 32, 255, 20
+--local height, width = 31, 58
 
 local model = nn.Sequential()
 model:add(nn.SplitTable(1))
 
-local hiddensize = {31, 512}
+local hiddensize = {height, 256}
 local inputsize = hiddensize[1]
 
 for i = 2, #hiddensize do
@@ -61,7 +63,7 @@ if opt.gpuid >= 0 then
 end
 
 for k, param in ipairs(model:parameters()) do
-    param:uniform(-0.1, 0.1)
+    param:uniform(-0.08, 0.08)
 end
 
 if opt.model ~= '' then
@@ -93,11 +95,11 @@ end
 
 function pred(outputs, targets)
     local count = 0
-    local _, index = nn.View(58, 11):forward(outputs:double()):max(3)
+    local _, index = nn.View(width, 11):forward(outputs:double()):max(3)
     local preds = {}
     for i = 1, #targets do
         local temp = {}
-        for j = 1, 58 do
+        for j = 1, width do
             if index[i][j][1] ~= temp[#temp] then
                 temp[#temp + 1] = index[i][j][1]
             end
@@ -111,7 +113,7 @@ function pred(outputs, targets)
         if #targets[i] == #predtarget then
             local flag = true
             for j = 1, #predtarget do
-                if (targets[i][j] + 1) ~= predtarget[j] then
+                if (targets[i][j] + 2) ~= predtarget[j] then
                     flag = false
                     break
                 end
@@ -134,7 +136,7 @@ function train()
         xlua.progress(count, totalsize)
         count = count + 1
         local actualsize = math.min(batchsize + t - 1, trainset.size) - t + 1
-        local inputs = torch.Tensor(actualsize, 58, 31):fill(0)
+        local inputs = torch.Tensor(actualsize, width, height):fill(0)
         if opt.gpuid >= 0 then
             inputs = inputs:cuda()
         end
@@ -149,15 +151,15 @@ function train()
             end
             --table.insert(targets, target)
             table.insert(targets, trainset.targets[shuffle[i]]:totable())
-            table.insert(sizes, 58)
+            table.insert(sizes, width)
         end
         local outputs = model:forward(inputs)
 
         -- re-align the activation values for ctc
         local acts = outputs:clone():fill(0)
         for i = 1, actualsize do
-            for j = 1, 58 do
-                acts[i + actualsize * (j - 1)] = outputs[j + 58 * (i - 1)]
+            for j = 1, width do
+                acts[i + actualsize * (j - 1)] = outputs[j + width * (i - 1)]
             end
         end
 
@@ -174,11 +176,14 @@ function train()
             losses = cpu_ctc(acts, grads, targets, sizes)
         end
 
+        -- gradient explosion problem
+        grads:clamp(-5, 5)
+
         -- re-align gradients for back-prop
         local gradients = grads:clone():fill(0)
         for i = 1, actualsize do
-            for j = 1, 58 do
-                gradients[j + 58 * (i - 1)] = grads[i + actualsize * (j - 1)]
+            for j = 1, width do
+                gradients[j + width * (i - 1)] = grads[i + actualsize * (j - 1)]
             end
         end
 
@@ -206,7 +211,7 @@ function eval()
     local batchsize = 50
     for t = 1, validset.size, batchsize do
         local actualsize = math.min(batchsize + t - 1, validset.size) - t + 1
-        local inputs = torch.Tensor(actualsize, 58, 31):fill(0)
+        local inputs = torch.Tensor(actualsize, width, height):fill(0)
         if opt.gpuid >= 0 then
             inputs = inputs:cuda()
         end
@@ -220,13 +225,13 @@ function eval()
                 table.insert(target, targetstr[j])
             end
             table.insert(targets, target)
-            table.insert(sizes, 58)
+            table.insert(sizes, width)
         end
         local outputs = model:forward(inputs)
         local acts = outputs:clone():fill(0)
         for i = 1, actualsize do
-            for j = 1, 58 do
-                acts[i + actualsize * (j - 1)] = outputs[j + 58 * (i - 1)]
+            for j = 1, width do
+                acts[i + actualsize * (j - 1)] = outputs[j + width * (i - 1)]
             end
         end
 
@@ -256,7 +261,7 @@ end
 function target2str(target)
     str = '#'
     for i = 1, target:size()[1] do
-        str = str .. (target[i] - 1)
+        str = str .. (target[i])
     end
     str = str .. '#'
     return str
@@ -264,7 +269,7 @@ end
 
 function showexample()
     -- randomly pick 10 pictures to see how things going
-    local inputs = torch.Tensor(1, 58, 31)
+    local inputs = torch.Tensor(1, width, height)
     if opt.gpuid >= 0 then
         inputs = inputs:cuda()
     end
@@ -294,7 +299,7 @@ do
 
         -- early-stopping
         if v_loss > last_v_loss then
-            if stopwatch >= 8 then
+            if stopwatch >= 3 then
                 if opt.lr < stoppinglr then
                     break   -- minimum learning rate
                 else

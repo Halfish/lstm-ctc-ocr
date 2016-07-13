@@ -1,13 +1,15 @@
 require 'image'
 require 'io'
 
-local num = 10000
+local num = tonumber(arg[1]) or 10
+print(num)
 
 local fullset = {}
 fullset.size = num
---local data = torch.Tensor(fullset.size, 3, 27, 142)
-local inputs = torch.Tensor(fullset.size, 31, 58)
-local targets = torch.Tensor(fullset.size, 4)
+local height, width = 32, 255
+local strlen = 20
+local inputs = torch.Tensor(fullset.size, height, width)
+local targets = torch.Tensor(fullset.size, strlen)
 
 for i = 1, num do
     local filename = './lines/' .. tostring(i) .. '.jpg'
@@ -16,15 +18,15 @@ for i = 1, num do
     local file = io.open('./lines/' .. tostring(i) .. '.txt', 'r')
     local labelstr = file:read()
     file:close()
-    local label = torch.IntTensor(4)
+    local label = torch.IntTensor(strlen)
     for j = 1, #labelstr do
-       label[j] = tonumber(string.sub(labelstr, j, j)) + 1
+       label[j] = tonumber(string.sub(labelstr, j, j))
     end
     targets[i] = label
 end
 
 fullset.inputs = inputs
-fullset.targets = targets 
+fullset.targets = targets
 
 print('saving data...')
 torch.save('fullset.dat', fullset)
