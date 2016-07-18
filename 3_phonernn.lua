@@ -12,6 +12,7 @@ cmd:option('-splitrate', 0.8, 'split rate for fullset, trainset and validset')
 cmd:option('-lr', 0.001, 'learning rate')
 cmd:option('-savefreq', 10, 'save frequency')
 cmd:option('-gpuid', -1, 'which GPU to use, start from 0, and -1 means using CPU')
+cmd:option('-verbose', false, 'to print extra verbose information')
 cmd:text()
 local opt = cmd:parse(arg or {})
 
@@ -30,7 +31,7 @@ print(string.format('train size = %d, valid size = %d', trainset.size, validset.
 -- building model
 local vocab_size = 10 + 1   -- for this problem, 0-9 plus ' '(blank)
 local height, width, strlen = 32, 255, 20
---local height, width = 31, 58
+--local height, width = 32, 63
 
 local model = nn.Sequential()
 model:add(nn.SplitTable(1))
@@ -93,7 +94,7 @@ function maxdecoder(output)
     return predstr .. '#'
 end
 
-function pred(outputs, targets)
+function pred(outputs, targets, log)
     local count = 0
     local _, index = nn.View(width, 11):forward(outputs:double()):max(3)
     local preds = {}
@@ -110,16 +111,18 @@ function pred(outputs, targets)
                 predtarget[#predtarget + 1] = temp[j]
             end
         end
+        local flag = true
         if #targets[i] == #predtarget then
-            local flag = true
             for j = 1, #predtarget do
-                if (targets[i][j] + 2) ~= predtarget[j] then
+                if (targets[i][j] + 1) ~= predtarget[j] then
                     flag = false
                     break
                 end
             end
-            if flag then count = count + 1 end
+        else
+            flag = false
         end
+        if flag then count = count + 1 end
     end
     return count
 end
@@ -147,10 +150,9 @@ function train()
             local targetstr = trainset.targets[shuffle[i]]
             local target = {}
             for j = 1, targetstr:size(1) do
-                table.insert(target, targetstr[j])
+                table.insert(target, targetstr[j] + 1)
             end
-            --table.insert(targets, target)
-            table.insert(targets, trainset.targets[shuffle[i]]:totable())
+            table.insert(targets, target)
             table.insert(sizes, width)
         end
         local outputs = model:forward(inputs)
@@ -176,9 +178,6 @@ function train()
             losses = cpu_ctc(acts, grads, targets, sizes)
         end
 
-        -- gradient explosion problem
-        grads:clamp(-5, 5)
-
         -- re-align gradients for back-prop
         local gradients = grads:clone():fill(0)
         for i = 1, actualsize do
@@ -186,15 +185,14 @@ function train()
                 gradients[j + width * (i - 1)] = grads[i + actualsize * (j - 1)]
             end
         end
-
+        -- back propagation
         model:zeroGradParameters()
         model:backward(inputs, gradients)
+        model:gradParamClip(5)
         model:updateGradParameters(0.9)
         model:updateParameters(opt.lr)
 
-        local count = pred(outputs, targets)
-        total_accu = total_accu + count
-
+        total_accu = total_accu + pred(outputs, targets, t == 1)
         for i = 1, #losses do
             total_loss = total_loss + losses[i]
         end
@@ -222,7 +220,7 @@ function eval()
             local targetstr = validset.targets[shuffle[i]]
             local target = {}
             for j = 1, targetstr:size(1) do
-                table.insert(target, targetstr[j])
+                table.insert(target, targetstr[j] + 1)
             end
             table.insert(targets, target)
             table.insert(sizes, width)
@@ -248,8 +246,7 @@ function eval()
             losses = cpu_ctc(acts, grads, targets, sizes)
         end
 
-        local count = pred(outputs, targets)
-        total_accu = total_accu + count
+        total_accu = total_accu + pred(outputs, targets, t == 1)
 
         for i = 1, #losses do
             total_loss = total_loss + losses[i]
@@ -267,13 +264,14 @@ function target2str(target)
     return str
 end
 
-function showexample()
+function showexample(num)
     -- randomly pick 10 pictures to see how things going
     local inputs = torch.Tensor(1, width, height)
     if opt.gpuid >= 0 then
         inputs = inputs:cuda()
     end
-    for i = 1, 99 do
+    num = num or 10
+    for i = 1, num do
         local index = math.random(validset.size)
         inputs[1] = validset.inputs[index]:t()
         local output = model:forward(inputs)
@@ -295,7 +293,7 @@ do
         local format = 'epoch = %d, loss = %.4f, accu = %.2f, v_loss = %.4f, v_accu = %.2f, costed %.3f s'
         print(string.format(format, epoch, loss, accu, v_loss, v_accu, timer:time().real))
 
-        --showexample()
+        if opt.verbose then showexample() end
 
         -- early-stopping
         if v_loss > last_v_loss then
@@ -305,12 +303,14 @@ do
                 else
                     -- decrease the learning rate and recount the stopwatch again
                     opt.lr = opt.lr / 2
+                    print('new learning rate is ' .. opt.lr)
                     stopwatch = 0
                 end
             else
                 stopwatch = stopwatch + 1 -- the valid loss didn't decrease for another time
             end
         end
+        last_v_loss = v_loss
 
         -- dump model
         if epoch % opt.savefreq == 0 then

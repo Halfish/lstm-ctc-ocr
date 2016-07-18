@@ -6,6 +6,7 @@ from PIL import ImageDraw
 from PIL import ImageFont
 
 import sys
+import os
 
 # how many pictures to generate
 num = 10
@@ -26,6 +27,8 @@ def genline(text, font, filename):
         f.close()
 
 if __name__ == '__main__':
+    if not os.path.isdir('./lines/'):
+        os.mkdir('./lines/')
     for i in range(num):
         fontname = './fonts/simkai.ttf'
         fontsize = 24
