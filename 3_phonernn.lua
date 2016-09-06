@@ -40,10 +40,10 @@ print(string.format('train size = %d, valid size = %d', trainset.size, validset.
 local decoder_util = require 'decoder'
 local decoder = {}
 if opt.lang == 'number' then
-    decoder = decoder_util.create('codec_num.txt', 32, 255)
+    decoder = decoder_util.create('codec_num.txt', 36, 255)
 else
     if opt.lang == 'chinese' then
-        decoder = decoder_util.create('codec.txt', 32, 2048)
+        decoder = decoder_util.create('codec.txt', 36, 2048)
     end
 end
 
