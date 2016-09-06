@@ -9,7 +9,7 @@ local decoder = decoder_util.create('codec_num.txt')
 
 local fullset = {}
 fullset.size = num
-local height, width = 32, 255
+local height, width = 36, 255
 local strlen = 20
 local inputs = torch.Tensor(fullset.size, height, width)
 local targets = {}
