@@ -1,7 +1,7 @@
 ## LSTM-CTC-OCR Toy experiment
 The project is just a toy experiment trying to apply CTC and LSTM for OCR problem, however, I only succeed in 20-digits recognition
 while longer context text is still hard to train. I may or may not pick up this project in the future. 
-So basically, this is a project for summary.
+So basically, this is a project for summary. 
 
 ## The trend of line recognition
 Recognizing lines of unconstrained text from images has always suffered from segmentation problems, which requires carefully 
@@ -32,3 +32,5 @@ like project [ocropy](https://github.com/tmbdev/ocropy), [paragraph recognition]
 
 You can also refer to [Recursive Recurrent Nets with Attention Modeling for OCR in the Wild]
 (http://arxiv.org/abs/1603.03101) to compare these two modern different architectures.
+
+You can :star: this project if you like it :-) 
