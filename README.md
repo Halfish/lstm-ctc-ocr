@@ -33,4 +33,8 @@ like project [ocropy](https://github.com/tmbdev/ocropy), [paragraph recognition]
 You can also refer to [Recursive Recurrent Nets with Attention Modeling for OCR in the Wild]
 (http://arxiv.org/abs/1603.03101) to compare these two modern different architectures.
 
-You can :star: this project if you like it :-) 
+---
+
+You can :star: this project if you like it.
+
+:-) 
