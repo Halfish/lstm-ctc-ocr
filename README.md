@@ -36,5 +36,3 @@ You can also refer to [Recursive Recurrent Nets with Attention Modeling for OCR 
 ---
 
 You can :star: this project if you like it.
-
-:-) 
